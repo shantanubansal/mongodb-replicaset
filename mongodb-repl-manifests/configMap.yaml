@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-init
+data:
+  mongo-user.sh: |
+    mongo admin -u ${MONGO_INITDB_ROOT_USERNAME} -p ${MONGO_INITDB_ROOT_PASSWORD} <<EOF
+        use unatanhs_db
+        db.createUser({user: "unatanhs", pwd: "${SECOND_USER_DB_PASSWORD}", roles: [
+            { role: "readWrite", db: "unatanhs_db" }
+        ]});
+    EOF
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-key
+
+data:
+  mongo.key: |
+    ahaksdnqsakdqnajhvckqaafnxasxaxaxmaskdadadsasfsdsdfsf
+    schcacnctcacncuadasdadadfbsasddfbadadwsioweewvaas
+    dfasasakjsvnaa
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-scripts
+data:
+  mongo-data-dir-permission.sh: |
+    chown -R mongodb:mongodb ${MONGO_DATA_DIR}
+    cp -r /var/lib/mongoKeyTemp /var/lib/mongoKey
+    chown -R mongodb:mongodb /var/lib/mongoKey
+    chmod 400 /var/lib/mongoKey/mongo.key
+    chown -R mongodb:mongodb /var/lib/mongoKey/mongo.key
+

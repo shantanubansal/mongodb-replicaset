@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      role: mongo
+  serviceName: mongo
+  template:
+    metadata:
+      labels:
+        role: mongo
+    spec:
+      serviceAccountName: mongo-account
+      terminationGracePeriodSeconds: 30
+      containers:
+        - image: mongo:4.2
+          name: mongo
+          command: ["/bin/sh","-c"]
+          args: ["/home/mongodb/mongo-data-dir-permission.sh && docker-entrypoint.sh mongod --replSet=rs0 --dbpath=/var/lib/mongodb --bind_ip=0.0.0.0 --keyFile=/var/lib/mongoKey/mongo.key"]
+          env:
+          - name: MONGO_INITDB_ROOT_USERNAME
+            value: root
+          - name: MONGO_DATA_DIR
+            value: /var/lib/mongodb
+          - name: MONGO_INITDB_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mongosecret
+                key: mongoRootPassword
+          - name: SECOND_USER_DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mongosecret
+                key: unatnahsDbPassword
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - mountPath: /var/lib/mongodb
+              name: mongo-data
+            - name: mongoinit
+              mountPath: /docker-entrypoint-initdb.d
+            - name: mongopost
+              mountPath: /home/mongodb
+            - name: mongokey
+              mountPath: /var/lib/mongoKeyTemp
+        - name: mongo-sidecar
+          image: cvallance/mongo-k8s-sidecar:latest
+          env:
+            - name: MONGO_SIDECAR_POD_LABELS
+              value: "role=mongo"
+            - name: KUBE_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: KUBERNETES_MONGO_SERVICE_NAME
+              value: mongo
+            - name: MONGODB_USERNAME
+              value: root
+            - name: MONGODB_DATABASE
+              value: admin
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongosecret
+                  key: mongoRootPassword
+      volumes:
+        - name: "mongoinit"
+          configMap:
+            name: "mongo-init"
+            defaultMode: 0755
+        - name: "mongopost"
+          configMap:
+            name: "mongo-scripts"
+            defaultMode: 0755
+        - name: "mongokey"
+          configMap:
+            name: "mongo-key"
+            defaultMode: 0755
+
+
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 20Gi

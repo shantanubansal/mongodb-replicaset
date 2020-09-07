@@ -1,0 +1,216 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mongodb-repl-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mongo-account
+  namespace: mongodb-repl-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mongo-role
+rules:
+- apiGroups:
+  - '*'
+  resources:
+  - configmaps
+  verbs:
+  - '*'
+- apiGroups:
+  - '*'
+  resources:
+  - deployments
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - '*'
+  resources:
+  - services
+  verbs:
+  - '*'
+- apiGroups:
+  - '*'
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mongo_role_binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mongo-role
+subjects:
+- kind: ServiceAccount
+  name: mongo-account
+  namespace: mongodb-repl-system
+---
+apiVersion: v1
+data:
+  mongo-user.sh: |
+    mongo admin -u ${MONGO_INITDB_ROOT_USERNAME} -p ${MONGO_INITDB_ROOT_PASSWORD} <<EOF
+        use unatanhs_db
+        db.createUser({user: "unatanhs", pwd: "${SECOND_USER_DB_PASSWORD}", roles: [
+            { role: "readWrite", db: "unatanhs_db" }
+        ]});
+    EOF
+kind: ConfigMap
+metadata:
+  name: mongo-init
+  namespace: mongodb-repl-system
+---
+apiVersion: v1
+data:
+  mongo.key: |
+    ahaksdnqsakdqnajhvckqaafnxasxaxaxmaskdadadsasfsdsdfsf
+    schcacnctcacncuadasdadadfbsasddfbadadwsioweewvaas
+    dfasasakjsvnaa
+kind: ConfigMap
+metadata:
+  name: mongo-key
+  namespace: mongodb-repl-system
+---
+apiVersion: v1
+data:
+  mongo-data-dir-permission.sh: |
+    chown -R mongodb:mongodb ${MONGO_DATA_DIR}
+    cp -r /var/lib/mongoKeyTemp /var/lib/mongoKey
+    chown -R mongodb:mongodb /var/lib/mongoKey
+    chmod 400 /var/lib/mongoKey/mongo.key
+    chown -R mongodb:mongodb /var/lib/mongoKey/mongo.key
+kind: ConfigMap
+metadata:
+  name: mongo-scripts
+  namespace: mongodb-repl-system
+---
+apiVersion: v1
+data:
+  mongoRootPassword: c2hhbnRhbnViYW5zYWw=
+  unatnahsDbPassword: Y2hhbmdldGhlc2VwYXNzd29yZHM=
+kind: Secret
+metadata:
+  name: mongosecret
+  namespace: mongodb-repl-system
+type: Opaque
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: mongo
+  name: mongo
+  namespace: mongodb-repl-system
+spec:
+  clusterIP: None
+  ports:
+  - port: 27017
+    targetPort: 27017
+  selector:
+    role: mongo
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo
+  namespace: mongodb-repl-system
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      role: mongo
+  serviceName: mongo
+  template:
+    metadata:
+      labels:
+        role: mongo
+    spec:
+      containers:
+      - args:
+        - /home/mongodb/mongo-data-dir-permission.sh && docker-entrypoint.sh mongod
+          --replSet=rs0 --dbpath=/var/lib/mongodb --bind_ip=0.0.0.0 --keyFile=/var/lib/mongoKey/mongo.key
+        command:
+        - /bin/sh
+        - -c
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          value: root
+        - name: MONGO_DATA_DIR
+          value: /var/lib/mongodb
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: mongoRootPassword
+              name: mongosecret
+        - name: SECOND_USER_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: unatnahsDbPassword
+              name: mongosecret
+        image: mongo:4.2
+        name: mongo
+        ports:
+        - containerPort: 27017
+        volumeMounts:
+        - mountPath: /var/lib/mongodb
+          name: mongo-data
+        - mountPath: /docker-entrypoint-initdb.d
+          name: mongoinit
+        - mountPath: /home/mongodb
+          name: mongopost
+        - mountPath: /var/lib/mongoKeyTemp
+          name: mongokey
+      - env:
+        - name: MONGO_SIDECAR_POD_LABELS
+          value: role=mongo
+        - name: KUBE_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: KUBERNETES_MONGO_SERVICE_NAME
+          value: mongo
+        - name: MONGODB_USERNAME
+          value: root
+        - name: MONGODB_DATABASE
+          value: admin
+        - name: MONGODB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: mongoRootPassword
+              name: mongosecret
+        image: cvallance/mongo-k8s-sidecar:latest
+        name: mongo-sidecar
+      serviceAccountName: mongo-account
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 493
+          name: mongo-init
+        name: mongoinit
+      - configMap:
+          defaultMode: 493
+          name: mongo-scripts
+        name: mongopost
+      - configMap:
+          defaultMode: 493
+          name: mongo-key
+        name: mongokey
+  volumeClaimTemplates:
+  - metadata:
+      name: mongo-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
