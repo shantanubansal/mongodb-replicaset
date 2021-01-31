@@ -1,5 +1,6 @@
 # mongodb-replicaset
 
+
 ### Introduction
 In this tutorial, we are going to set up a MongoDB ReplicaSet in a K8s cluster using a kustomize. We will be writing some init scripts to be run at the first MongoDB start and we will be able to scale up and down replica set count with simple kubectl command.
 
