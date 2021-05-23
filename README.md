@@ -10,3 +10,7 @@ A replica set in MongoDB is a group of mongod processes that maintain the same d
 
 ## Access tutoial 
 https://www.spectrocloud.com/blog/kustomize-your-way-to-mongodb-replicaset/
+
+
+
+Note: Since Each mongoDB server have a lock file inside the mongo dir. If we share the dir the new nodes wont be able to start
